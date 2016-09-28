@@ -9,6 +9,8 @@ This is my caffe framework which is initially designed for triplet loss neural n
 2. create LEVELDB/LMDB for multiple postive and negative input. Code in ```tools/convert_multiple_triplet_db_dataset.cpp```.
 3. loss layer with multiple postive and negative input. Code in ```src/caffe/layers/naive_triplet_multiple_loss_layer.cpp```.
 
+Please cite Caffe in your publications if it helps your research:
+
     @article{jia2014caffe,
       Author = {Jia, Yangqing and Shelhamer, Evan and Donahue, Jeff and Karayev, Sergey and Long, Jonathan and Girshick, Ross and Guadarrama, Sergio and Darrell, Trevor},
       Journal = {arXiv preprint arXiv:1408.5093},
