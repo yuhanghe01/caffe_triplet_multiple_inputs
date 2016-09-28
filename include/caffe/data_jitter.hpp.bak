@@ -1,0 +1,66 @@
+#ifndef CAFFE_DATA_JITTER_HPP
+#define CAFFE_DATA_JITTER_HPP
+
+#include <vector>
+
+#include "caffe/blob.hpp"
+#include "caffe/common.hpp"
+#include "caffe/proto/caffe.pb.h"
+#include "caffe/data_transformer.hpp"
+
+namespace caffe {
+
+/**
+ * @brief Applies common jitters to the input image data, such as
+ * vignetting, rotation, fisheye distortion...
+ */
+
+class DataJitter {
+ public:
+  DataJitter( const TransformationParameter& param, const Phase& phase );
+  ~DataJitter() {}
+
+  /**
+   * @brief Initialize the Random number generations if needed by the
+   *    transformation.
+   */
+  void InitRand();
+
+  void data_jitter( cv::Mat& cv_img_, const int crop_size );
+  void data_jitter( std::vector< cv::Mat >& input_img_vec, const int crop_size );
+
+ protected:
+
+  TransformationParameter param_;
+  Phase phase_;
+  
+  virtual int Rand(int n);
+  shared_ptr<Caffe::RNG> rng_;
+
+  //the detailed jittering function list;
+
+  void light_correction_jitter( cv::Mat& inputImg, float delta);
+  void rotate_rescale_jitter( cv::Mat& inputImg, float angle, float scale, cv::Mat& rotateMat);
+  void random_crop_square_jitter( cv::Mat& inputImg, int bordSizeW, int bordSizeH);
+  void center_crop_square_jitter( cv::Mat& inputImg, int bordSizeW, int bordSizeH);
+  void blur_jitter( cv::Mat& inputImg,int kernelSize);
+  void color_casting( cv::Mat& inputImg );
+  void saturate_cast_check( cv::Mat& inputImg );
+
+  //the following four functions are used for vignetting;
+  void vignetting( cv::Mat& input_img, const float radius, const float mask_power );
+  void generate_mask_for_vignet( cv::Mat& mask_img, const float radius, const float mask_power );
+  inline float calcu_dist( cv::Point p1, cv::Point p2 );
+  inline float calcu_max_dist( cv::Size img_size, cv::Point center );
+
+  //the following four functions are used for fish_eye distortion;
+  float calcu_shift( float x1, float x2, float cx, float k );
+  float get_radial_X( float x, float y, float cx, float cy, float k, bool scale, cv::Vec4f props );
+  float get_radial_Y( float x, float y, float cx, float cy, float k, bool scale, cv::Vec4f props );
+  void fish_eye_distortion( cv::Mat& input_img, float Cx, float Cy, float k, bool scale = true );
+  //void jitter_image_total( cv::Mat& cv_img_, const int crop_size );
+};
+
+}  // namespace caffe
+
+#endif  // CAFFE_DATA_JITTER_HPP_

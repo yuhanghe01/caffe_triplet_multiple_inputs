@@ -1,0 +1,417 @@
+#ifdef USE_OPENCV
+#include <opencv2/core/core.hpp>
+#include <opencv2/opencv.hpp>
+#endif  // USE_OPENCV
+
+#include <string>
+#include <vector>
+
+#include "caffe/data_jitter.hpp"
+#include "caffe/util/io.hpp"
+#include "caffe/util/math_functions.hpp"
+#include "caffe/util/rng.hpp"
+#include <ctime>
+#include <iostream>
+#include <sstream>
+
+namespace caffe {
+
+
+DataJitter::DataJitter( const TransformationParameter& param, const Phase& phase ){
+  param_ = param;
+  phase_ = phase;
+}
+
+void DataJitter::light_correction_jitter(cv::Mat& inputImg, float delta){
+  int imgType = -1;
+  if(inputImg.channels() == 3)
+    imgType = CV_32FC3;
+  else
+    imgType = CV_32F;
+
+  cv::Mat tmpMat = cv::Mat::zeros(inputImg.rows, inputImg.cols, imgType);
+  inputImg.convertTo( tmpMat, tmpMat.type(), 1.0/255.0 );
+  pow( tmpMat, delta, tmpMat );
+  tmpMat.convertTo( inputImg, inputImg.type(), 255.0 );
+}
+
+void DataJitter::rotate_rescale_jitter(cv::Mat& inputImg, float angle, float scale, cv::Mat& rotateMat){
+  cv::Point2f center = cv::Point2f(inputImg.cols / 2, inputImg.rows / 2); 
+  rotateMat = cv::getRotationMatrix2D( center, angle, scale );
+  cv::Mat rotateImg;
+  cv::warpAffine( inputImg, rotateImg, rotateMat, inputImg.size() );
+  inputImg = rotateImg;
+}
+
+void DataJitter::random_crop_square_jitter(cv::Mat& inputImg, int bordSizeW, int bordSizeH){
+  int w = inputImg.size().width;
+  int h = inputImg.size().height;
+  
+  cv::Mat tmpImg;
+  if(w > h){
+    int randW = Rand(w-h);
+    tmpImg = inputImg( cv::Rect(randW, 0, h, h) );
+  }else if( w < h){
+    int randH = Rand(h-w); 
+    tmpImg=inputImg( cv::Rect(0, randH, w, w) );
+  }else{
+    tmpImg = inputImg;
+  }
+  cv::resize( inputImg, tmpImg, cv::Size(bordSizeW, bordSizeH) );
+}
+
+void DataJitter::center_crop_square_jitter( cv::Mat& inputImg, int bordSizeW, int bordSizeH){
+  int w = inputImg.size().width;
+  int h = inputImg.size().height;
+  
+  cv::Mat tmpImg;
+  if(w > h){
+    int randW = (w-h)/2;
+    tmpImg=inputImg(cv::Rect(randW, 0, h, h));
+  }else if( w < h){
+    int randH = (h-w)/2; 
+    tmpImg = inputImg(cv::Rect(0, randH, w, w));
+  }else{
+    tmpImg = inputImg;
+  }
+  cv::resize( inputImg, tmpImg, cv::Size(bordSizeW, bordSizeH) );
+}
+
+
+void DataJitter::blur_jitter( cv::Mat& inputImg, int kernelSize){
+  cv::GaussianBlur(inputImg, inputImg, cv::Size(kernelSize, kernelSize), 0);
+}
+
+void DataJitter::saturate_cast_check( cv::Mat& inputImg ){
+  int row_num = inputImg.rows;
+  int col_num = inputImg.cols;
+  for( int i = 0; i < row_num; ++i ){
+    for( int j = 0; j < col_num; ++j ){
+      if( inputImg.at<uchar>( i,j ) > 255 )
+        inputImg.at<uchar>(i,j) = 255;
+      if( inputImg.at<uchar>( i, j ) < 0 )
+        inputImg.at<uchar>(i,j) = 0;
+    }
+  }
+}
+
+void DataJitter::color_casting( cv::Mat& inputImg ){
+
+  bool alert_r = false;
+  bool alert_g = false;
+  bool alert_b = false;
+  if( Rand(2) == 0 )
+    alert_r = true;
+  if( Rand(2) == 0 )
+    alert_g = true;
+  if( Rand(2) == 0 )
+    alert_b = true;
+  std::vector< cv::Mat > channel_rgb;
+  cv::split( inputImg, channel_rgb );
+
+  if( alert_r == true ){
+    bool is_plus = false;
+    if( Rand(2) == 0 )
+      is_plus = true;
+    if( is_plus == true ){
+      channel_rgb[0] = channel_rgb[0] + uchar(20);
+    }
+    else{
+      channel_rgb[0] = channel_rgb[0] - uchar(20);
+    }
+  }
+
+  if( alert_g == true ){
+    bool is_plus = false;
+    if( Rand(2) == 0 )
+      is_plus = true;
+    if( is_plus == true ){
+      channel_rgb[1] = channel_rgb[1] + uchar(20);
+    }
+    else{
+      channel_rgb[1] = channel_rgb[1] - uchar(20);
+    }
+  }
+  if( alert_b == true ){
+    bool is_plus = false;
+    if( Rand(2) == 0 )
+      is_plus = true;
+    if( is_plus == true ){
+      channel_rgb[2] = channel_rgb[2] + uchar(20);
+    }
+    else{
+      channel_rgb[2] = channel_rgb[2] - uchar(20);
+    }
+  }
+
+  saturate_cast_check( channel_rgb[0] );
+  saturate_cast_check( channel_rgb[1] );
+  saturate_cast_check( channel_rgb[2] );
+  cv::merge( channel_rgb, inputImg );
+}
+
+inline float DataJitter::calcu_dist( cv::Point p1, cv::Point p2 ){
+  return sqrt( pow( (float)( p1.x - p2.x ), 2) + pow((float)(p1.y - p2.y), 2) );
+}
+
+inline float DataJitter::calcu_max_dist( cv::Size img_size, cv::Point center ){
+  std::vector< cv::Point >  corners;
+  corners.push_back( cv::Point(0,0) );
+  corners.push_back( cv::Point( img_size.width , 0 ) );
+  corners.push_back( cv::Point( 0, img_size.height ) );
+  corners.push_back( cv::Point( img_size.width, img_size.height ) );
+
+  float max_dist = 0.;
+  for( int i = 0; i < corners.size(); ++i ){
+    float dist_tmp = calcu_dist( corners[i], center );
+    if( dist_tmp > max_dist )
+      max_dist = dist_tmp; 
+  }
+  return max_dist;
+}
+
+void DataJitter::generate_mask_for_vignet( cv::Mat& mask_img, float radius, float mask_power ){
+  cv::Point center_point = cv::Point( mask_img.size().width/2, mask_img.size().height/2 );
+  float img_max_radius = calcu_max_dist( mask_img.size(), center_point );
+  
+  mask_img.setTo( cv::Scalar(1) );
+  
+  for( int i = 0; i < mask_img.rows; ++i ){
+    for( int j = 0; j < mask_img.cols; ++j ){
+      float dist_tmp = calcu_dist( center_point, cv::Point( j, i ) )/img_max_radius;
+      dist_tmp *= mask_power;
+      float dist_result = pow( cos(dist_tmp), 4 );
+      mask_img.at<float>(i,j) = dist_result;    
+    }
+  }
+}
+
+void DataJitter::vignetting( cv::Mat& input_img, const float radius, const float mask_power ){
+  cv::Mat mask_img( input_img.size(), CV_32F );
+  generate_mask_for_vignet( mask_img, radius, mask_power );
+ 
+  cv::Mat lab_img( input_img.size(), CV_8UC3 );
+  cv::cvtColor( input_img, lab_img, CV_BGR2Lab );
+  for( int row = 0; row < lab_img.rows; ++row ){
+    for( int col = 0; col < lab_img.cols; ++ col ){
+      cv::Vec3b val_tmp = lab_img.at< cv::Vec3b >( row, col );
+      val_tmp.val[0] *= mask_img.at<float>( row, col );
+      lab_img.at< cv::Vec3b >(row, col) = val_tmp;
+    }
+  }
+  cv::cvtColor( lab_img, input_img, CV_Lab2BGR );
+}
+
+float DataJitter::calcu_shift( float x1, float x2, float cx, float k ){
+  float thresh = 1.;
+  float x3 = x1 + ( x2 - x1 )*0.5;
+  float res1 = x1 + ((x1 - cx)*k*((x1 - cx)*(x1 - cx)));
+  float res3 = x3 + ((x3 - cx)*k*((x3 - cx)*(x3 - cx)));
+
+  if( res1 > -thresh && res1 < thresh )
+    return x1;
+  if( res3 < 0. )
+    return calcu_shift( x3, x2, cx, k );
+  else
+    return calcu_shift( x1, x3, cx, k );
+}
+
+float DataJitter::get_radial_X( float x, float y, float cx, float cy, float k, bool scale, cv::Vec4f props ){
+  float result;
+  if( scale ){
+    float x_shift = props[0];
+    float y_shift = props[1];
+    float x_scale = props[2];
+    float y_scale = props[3];
+
+    x = x*x_scale + x_shift;
+    y = y*y_scale + y_shift;
+    result = x + ( (x - cx)*k*((x - cx)*(x - cx) + (y - cy)*(y - cy)) );
+  }
+  else
+    result = x + ( (x - cx)*k*((x - cx)*(x - cx) + (y - cy)*(y - cy)));
+
+  return result;
+  
+}
+
+float DataJitter::get_radial_Y( float x, float y, float cx, float cy, float k, bool scale, cv::Vec4f props){
+  float result = 0.;
+  if( scale ){
+    float x_shift = props[0];
+    float y_shift = props[1];
+    float x_scale = props[2];
+    float y_scale = props[3];
+
+    x = x*x_scale + x_shift;
+    y = y*y_scale + y_shift;
+    
+    result = y + ((y - cy)*k*((x - cx)*(x - cx) + (y - cy)*(y - cy)));
+  } 
+  else
+    result = y + ((y - cy)*k*((x - cx)*(x - cx) + (y - cy)*(y - cy)));
+
+  return result;
+}
+
+void DataJitter::fish_eye_distortion( cv::Mat& input_img, float Cx, float Cy, float k, bool scale){
+
+  CHECK( Cx >= 0 );
+  CHECK( Cy >= 0 );
+  CHECK( k >= 0 );
+
+  cv::Mat map_x = cv::Mat( input_img.size(), CV_32FC1 );
+  cv::Mat map_y = cv::Mat( input_img.size(), CV_32FC1 );
+  
+  int rows = input_img.rows;
+  int cols = input_img.cols;
+
+  cv::Vec4f props;
+
+  float x_shift = calcu_shift( 0, Cx - 1, Cx, k );
+  props[0] = x_shift;
+  float new_center_x = cols - Cx;
+  float x_shift_2 = calcu_shift( 0, new_center_x - 1, new_center_x, k );
+ 
+  float y_shift = calcu_shift( 0, Cy - 1, Cy, k );
+  props[1] = y_shift;
+  float new_center_y = cols - Cy;
+  float y_shift_2 = calcu_shift( 0, new_center_y - 1, new_center_y, k );
+
+  float x_scale = ( cols - x_shift - x_shift_2 )/cols;
+  props[2] = x_scale;
+  float y_scale = ( rows - y_shift - y_shift_2 )/rows;
+  props[3] = y_scale;
+
+  float* p = map_x.ptr<float>(0);
+  for( int row = 0; row < rows; ++row ){
+    for( int col = 0; col < cols; ++col ){
+      *p++ = get_radial_X( (float)col, (float)row, Cx, Cy, k, scale, props );
+    }
+  }
+  
+  p = map_y.ptr<float>(0);
+  for( int row = 0; row < rows; ++row ){
+    for( int col = 0; col < cols; ++ col ){
+      *p++ = get_radial_Y( (float)col, (float)row, Cx, Cy, k, scale, props );
+    }
+  }
+
+  cv::Mat output_img;
+  cv::remap( input_img, output_img, map_x, map_y, CV_INTER_LINEAR, cv::BORDER_CONSTANT );
+  output_img.copyTo( input_img ); 
+}
+
+
+void DataJitter::data_jitter( std::vector< cv::Mat >& input_img_vec, const int crop_size ){
+  CHECK_GT( input_img_vec.size(), 0 ) << "the size of input_img_vec should be larger than 0!";
+  for( int i = 0; i < input_img_vec.size(); ++i ){
+    data_jitter( input_img_vec[i], crop_size );
+  }
+}
+
+void DataJitter::data_jitter( cv::Mat& cv_img_, const int crop_size ){
+    //std::cout << "begin to jitter the image!!!!!!!!!!!!!!!!!!!!!!\n";
+    //int save_tag = Rand(10000);
+    //std::stringstream ss;
+    //ss << save_tag;
+    //std::string save_directory = "/mnt/lvm/heyuhang/train_test_0314/test_img/";
+    //std::string save_name = save_directory + "_before_jitter_" + ss.str() + ".jpg";
+    //cv::imwrite( save_name, cv_img_ );
+
+    int jitter_num = 0;
+   
+    float resize_scale_ratio = param_.resize_scale_ratio();
+    int ecrop_size = int(crop_size*resize_scale_ratio);
+
+    // step 1 : rotate & rescale
+    int max_rotate_degree = param_.max_rotate_degree();
+    float max_rescale_ratio = param_.max_rescale_ratio();
+    if( phase_ == TRAIN && Rand(2) == 0){
+      jitter_num++;
+      int sign = Rand(2) == 0?1:-1;
+      float degree = max_rotate_degree > 0 ? Rand(max_rotate_degree)*sign : 0;
+      sign = Rand(2) == 0?1:-1;  
+      float scale = max_rescale_ratio > 0 ? 1.0 + Rand(int(max_rescale_ratio*100))/100.0*sign : 1.0;
+      cv::Mat rotMat;
+      rotate_rescale_jitter(cv_img_,degree, scale, rotMat);
+    }
+    // step 2 : gaussian blur
+    if(phase_ == TRAIN && Rand(2) == 0 && param_.blur_jitter()){
+      jitter_num++;
+      int ks = ( Rand(2) == 0?3:5 ); 
+      blur_jitter(cv_img_, ks);
+    }
+    // step 3 : light jitter
+    int max_gamma_light = param_.max_gamma_light();
+    int base_gamma_light = param_.base_gamma_light();
+    if(phase_ == TRAIN && Rand(2) == 0 && max_gamma_light > 0 && base_gamma_light > 0){
+      jitter_num++;
+      int seed = Rand(max_gamma_light); 
+      //Dtype delta = 0.1*(seed + base_gamma_light); //0.5-2.0 
+      float delta = 0.1*(seed + base_gamma_light); //0.5-2.0 
+      light_correction_jitter(cv_img_, delta);
+    } 
+    // step 4 : crop square --> just resize @ here
+  
+    if(phase_ == TRAIN) 
+      random_crop_square_jitter(cv_img_, ecrop_size, ecrop_size);
+    else
+      center_crop_square_jitter(cv_img_, ecrop_size, ecrop_size);
+
+    // step5: color casting
+    if( phase_ == TRAIN && Rand(2) == 0 ){
+      jitter_num++;
+      color_casting( cv_img_ );
+    }
+    //step 6: vignetting
+    float radius_vignet = param_.vignet_radius();
+    float vignet_mask_power = param_.vignet_mask_power();
+    if( phase_ == TRAIN && Rand(2) == 0 ){
+      jitter_num++;
+      vignetting( cv_img_, radius_vignet, vignet_mask_power );
+     }
+    
+    //step 7: fish_eye_distortion
+    float distortion_factor = param_.distortion_factor();
+    if( phase_ == TRAIN && Rand(2) == 0 ){
+      jitter_num++;
+      fish_eye_distortion( cv_img_, cv_img_.cols/2.0, cv_img_.rows/2.0, distortion_factor, true );
+    } 
+
+    /*
+    if( phase_ == TRAIN ){  
+      //std::cout << "jitter_num = " << jitter_num << std::endl << std::endl;      
+      //save_name = save_directory + "_jittered_" + ss.str() + ".jpg";
+      //if( save_num < 100 )
+        //cv::imwrite( save_name, cv_img_ );
+      //save_tag++;
+      save_num++;
+    } 
+    */
+}
+// util end
+
+
+void DataJitter::InitRand() {
+  const bool needs_rand = param_.mirror() ||
+      (phase_ == TRAIN && param_.crop_size());
+  if (needs_rand) {
+    const unsigned int rng_seed = caffe_rng_rand();
+    rng_.reset(new Caffe::RNG(rng_seed));
+  } else {
+    rng_.reset();
+  }
+}
+
+int DataJitter::Rand(int n) {
+  CHECK(rng_);
+  CHECK_GT(n, 0);
+  caffe::rng_t* rng =
+      static_cast<caffe::rng_t*>(rng_->generator());
+  return ((*rng)() % n);
+}
+
+//INSTANTIATE_CLASS(DataJitter);
+
+}  // namespace caffe
