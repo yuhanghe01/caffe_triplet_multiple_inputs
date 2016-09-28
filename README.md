@@ -1,4 +1,8 @@
 # Caffe Framework with various triplet loss neural network
+
+[![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
+[![License](https://img.shields.io/badge/license-BSD-blue.svg)](LICENSE)
+
 This is my caffe framework which is initially designed for triplet loss neural network. It contains various useful implementations, including:
 
 1. create LEVELDB/LMDB for triplet input: anchor/postive/negative. Code in ```tools/convert_triplet_db_dataset.cpp```.
