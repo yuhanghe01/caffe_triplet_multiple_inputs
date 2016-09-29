@@ -19,6 +19,15 @@ anchor2.png      pos2.png      neg2.png
 ...
 ```
 
+## Create LMDB/LEVELDB file for multiple postives or negatives input
+
+I extend the current triple input restraint to allow multiple postives and negatives input. That is, an anchor image corresponds to multiple postive and negative input. The relevant code is `tools/convert_multiple_triplet_db_dataset.cpp`, in which each line accordingly consists of anchor image, multiple postive and multiple negatie images, with two extra numbers indicating the the beginning of positive images and negatives images. An example is shown below:
+
+```!bash
+anchor1.png      pos1.png      pos2.png      pos3.png     neg1.png      neg2.png      neg3.png      neg4.png      1      4
+...
+```
+
 If you find this useful, please cite Caffe paper:
 
     @article{jia2014caffe,
