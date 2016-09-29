@@ -9,6 +9,16 @@ This is my caffe framework which is initially designed for triplet loss neural n
 2. create LEVELDB/LMDB for multiple postive and negative input. Code in ```tools/convert_multiple_triplet_db_dataset.cpp```.
 3. loss layer with multiple postive and negative input. Code in ```src/caffe/layers/naive_triplet_multiple_loss_layer.cpp```.
 
+## Create LMDB/LEVELDB file for triple input
+
+To speed up the overall neural network training, it's better to convert input triple images into LMDB/LEVELDB. I provide the relevant code in `tools/convert_triplet_db_dataset.cpp`, in which each lines consists of anchor positive and negative respectively. An example list is shown below, not that all images should be shown with absolute pathes, separated by SPACE or TAB.
+
+```!bash
+anchor1.png      pos1.png      neg1.png
+anchor2.png      pos2.png      neg2.png
+...
+```
+
 If you find this useful, please cite Caffe paper:
 
     @article{jia2014caffe,
