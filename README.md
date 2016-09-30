@@ -29,7 +29,26 @@ anchor1.png      pos1.png      pos2.png      pos3.png     neg1.png      neg2.png
 ```
 ## The loss layer of multiple positive and negative inputs.
 
-I organize all the positive and negative inputs as one blob with $N\times C$
+I organize all the positive and negative inputs as one blob with the channel number equals to the total number of anchor positive and negative inputs. In the loss layer, I split the anchor positive and negative inputs and process them separately. So the loss layer prototxt should be specified with the length of anchor, positive and negative respectively.
+
+```!bash
+layer {
+     name: "triplet_loss"
+     type: "NaiveTripletMultipleLoss"
+     bottom: "ip2norm"
+     top: "loss"
+     top: "accuracy"
+     multiple_triplet_loss_param{
+     margin: 1
+     anchor_len: 1
+     pos_len: 3
+     neg_len: 4
+     batch_size: 30
+     sim_type: "DotProductSimilarity"
+     }
+}
+```
+
 If you find this useful, please cite Caffe paper:
 
     @article{jia2014caffe,
