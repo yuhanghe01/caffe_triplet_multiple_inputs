@@ -27,7 +27,9 @@ I extend the current triple input restraint to allow multiple postives and negat
 anchor1.png      pos1.png      pos2.png      pos3.png     neg1.png      neg2.png      neg3.png      neg4.png      1      4
 ...
 ```
+## The loss layer of multiple positive and negative inputs.
 
+I organize all the positive and negative inputs as one blob with $N\times C$
 If you find this useful, please cite Caffe paper:
 
     @article{jia2014caffe,
